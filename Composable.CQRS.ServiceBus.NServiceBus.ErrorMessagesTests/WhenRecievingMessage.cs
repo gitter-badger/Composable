@@ -46,21 +46,12 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.ErrorMessagesTests
             };
 
             Exception exceptionPassedToFailureHeaderProvider = null;
-            ManualResetEvent messageErrorHandlingInvoked = new ManualResetEvent(false);
-
-            endpointConfigurer.Extractor.RecievedException += e =>
-            {
-                exceptionPassedToFailureHeaderProvider = e;
-                messageErrorHandlingInvoked.Set();
-            };
 
             bus.SendLocal(new ErrorGeneratingMessage());            
 
-            Assert.That(messageHandled.WaitOne(30.Seconds()), Is.True, "Timed out waiting for message");
 
             Thread.Sleep(3000);
 
-            Assert.That(messageErrorHandlingInvoked.WaitOne(30.Seconds()), Is.True, "Timed out waiting for error handling to be invoked");
             
             exceptionPassedToFailureHeaderProvider.GetRootCauseException().Should().BeOfType<RootCauseException>();            
 
@@ -93,7 +84,6 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.ErrorMessagesTests
         public MyEndPointConfigurer(string queueName)
         {
             _queueName = queueName;
-            Extractor = new ExceptionExtractor();
         }
 
         override protected Configure ConfigureLogging(Configure config)
@@ -104,12 +94,9 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.ErrorMessagesTests
         protected override void ConfigureContainer(IWindsorContainer container)
         {
             Container = container;
-            container.Register(Component.For<IServiceBus>().ImplementedBy<NServiceBusServiceBus>(),
-                    Component.For<IProvideFailureHeaders>().Instance(Extractor)
+            container.Register(Component.For<IServiceBus>().ImplementedBy<NServiceBusServiceBus>()
                 );
         }
-
-        public ExceptionExtractor Extractor { get; private set; }
 
         public IWindsorContainer Container { get; set; }
 
@@ -118,16 +105,6 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.ErrorMessagesTests
         protected override Configure ConfigureSubscriptionStorage(Configure config)
         {
             return config.MsmqSubscriptionStorage();
-        }
-    }
-
-    public class ExceptionExtractor : IProvideFailureHeaders
-    {
-        public event Action<Exception> RecievedException;
-        public IDictionary<string, string> GetExceptionHeaders(TransportMessage message, Exception e)
-        {
-            RecievedException(e);
-            return  new Dictionary<string, string>();
         }
     }
 }

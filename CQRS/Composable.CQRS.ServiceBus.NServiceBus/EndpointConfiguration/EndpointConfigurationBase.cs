@@ -61,7 +61,7 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.EndpointConfiguration
 
         protected virtual Configure ConfigureSubscriptionStorage(Configure config)
         {
-            return config.DBSubcriptionStorage();
+            return config.UseNHibernateSubscriptionPersister();
         }
 
         protected virtual Configure ConfigureSaga(Configure config)
@@ -83,7 +83,6 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.EndpointConfiguration
             _container.Register(
                 Component.For<IWindsorContainer, WindsorContainer>().Instance(_container),
                 Component.For<IManageUnitsOfWork>().ImplementedBy<ComposableCqrsUnitOfWorkManager>().LifeStyle.PerNserviceBusMessage(),
-                Component.For<IProvideFailureHeaders>().ImplementedBy<ComposableFailureHeadersProvider>().LifeStyle.Singleton,
                 Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>().LifeStyle.PerNserviceBusMessage()
                 );
 
