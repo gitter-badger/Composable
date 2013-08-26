@@ -9,17 +9,10 @@ using Castle.Windsor;
 using Composable.CQRS.ServiceBus.NServiceBus.EndpointConfiguration;
 using Composable.CQRS.Testing;
 using Composable.ServiceBus;
-using Composable.System;
-using Composable.SystemExtensions.Threading;
-using Composable.UnitsOfWork;
 using NCrunch.Framework;
 using NServiceBus;
-using NServiceBus.Faults;
-using NServiceBus.Unicast.Transport;
 using NUnit.Framework;
-using Composable.CQRS.Windsor;
 using Composable.SystemExtensions;
-using System.Linq;
 using FluentAssertions;
 
 #endregion

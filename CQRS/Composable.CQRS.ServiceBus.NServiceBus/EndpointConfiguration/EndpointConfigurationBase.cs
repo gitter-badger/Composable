@@ -42,8 +42,7 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.EndpointConfiguration
 
             var busConfig2 = LoadMessageHandlers(busConfig, First<EmptyHandler>.Then<MessageSourceValidator>().AndThen<CatchSerializationErrors>());
 
-            busConfig2.ImpersonateSender(false)
-                .CreateBus()
+            busConfig2.CreateBus()
                 .Start(() => Configure.Instance.ForInstallationOn<global::NServiceBus.Installation.Environments.Windows>().Install());
         }
 
@@ -118,7 +117,7 @@ namespace Composable.CQRS.ServiceBus.NServiceBus.EndpointConfiguration
     {
     }
 
-    public class EmptyHandler : IMessageHandler<WillNeverBeUsed>
+    public class EmptyHandler : IHandleMessages<WillNeverBeUsed>
     {
         public void Handle(WillNeverBeUsed message)
         {

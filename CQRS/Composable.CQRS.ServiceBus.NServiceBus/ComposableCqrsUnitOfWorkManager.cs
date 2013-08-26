@@ -5,7 +5,6 @@ using Castle.Windsor;
 using Composable.SystemExtensions.Threading;
 using Composable.UnitsOfWork;
 using NServiceBus.UnitOfWork;
-using Remotion.Linq.Parsing.Structure.IntermediateModel;
 using log4net;
 
 namespace Composable.CQRS.ServiceBus.NServiceBus

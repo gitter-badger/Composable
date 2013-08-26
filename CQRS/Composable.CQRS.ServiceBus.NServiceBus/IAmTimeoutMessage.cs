@@ -1,8 +1,6 @@
-﻿using NServiceBus.Saga;
-
-namespace Composable.CQRS.ServiceBus.NServiceBus
+﻿namespace Composable.CQRS.ServiceBus.NServiceBus
 {
-    public interface IAmTimeoutMessage:ITimeoutState
+    public interface IAmTimeoutMessage
     {
         string EnvironmentName { get; set; }
     }

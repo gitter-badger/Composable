@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
+using NServiceBus;
 using NServiceBus.Faults;
 using NServiceBus.Unicast.Transport;
 using Composable.System;
