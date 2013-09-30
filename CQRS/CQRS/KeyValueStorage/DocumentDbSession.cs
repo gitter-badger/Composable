@@ -264,14 +264,12 @@ namespace Composable.KeyValueStorage
 
         void IUnitOfWorkParticipant.Commit(IUnitOfWork unit)
         {
-            CheckContextAndJoinAnyAmbientTransaction();
             InternalSaveChanges();
             _unitOfWork = null;
         }
 
         void IUnitOfWorkParticipant.Rollback(IUnitOfWork unit)
         {
-            CheckContextAndJoinAnyAmbientTransaction();
             _unitOfWork = null;
         }
 
@@ -291,6 +289,9 @@ namespace Composable.KeyValueStorage
                 Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
                 _isInTransaction = true;
                 _ambientTransaction = Transaction.Current.Clone();
+            }else if(_isInTransaction && Transaction.Current != _ambientTransaction)
+            {
+                throw new Exception("WTF");
             }
         }
 
@@ -318,6 +319,7 @@ namespace Composable.KeyValueStorage
         void IEnlistmentNotification.Commit(Enlistment enlistment)
         {
             _isInTransaction = false;
+            _ambientTransaction = null;
             enlistment.Done();
         }
 
@@ -325,12 +327,14 @@ namespace Composable.KeyValueStorage
         {
             ((IUnitOfWorkParticipant)this).Rollback(_unitOfWork);
             _isInTransaction = false;
+            _ambientTransaction = null;
             enlistment.Done();
         }
 
         void IEnlistmentNotification.InDoubt(Enlistment enlistment)
         {
             _isInTransaction = false;
+            _ambientTransaction = null;
             enlistment.Done();
         }
     }
