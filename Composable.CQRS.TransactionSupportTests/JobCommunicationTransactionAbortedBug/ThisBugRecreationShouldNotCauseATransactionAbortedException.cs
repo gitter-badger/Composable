@@ -15,10 +15,11 @@ using Composable.KeyValueStorage;
 using Composable.KeyValueStorage.SqlServer;
 using Composable.ServiceBus;
 using Composable.SystemExtensions.Threading;
-using JetBrains.Annotations;
 using NServiceBus;
 using NUnit.Framework;
 
+// ReSharper disable RedundantArgumentDefaultValue
+// ReSharper disable MemberCanBePrivate.Global
 namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbortedBug
 {
     [TestFixture]
@@ -30,8 +31,8 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
         protected void Initialize()
         {
             Container = new WindsorContainer();
-            Container.Kernel.ComponentModelBuilder.AddContributor(new LifestyleRegistrationMutator(originalLifestyle: LifestyleType.PerWebRequest,
-                newLifestyleType: LifestyleType.Scoped));
+            Container.Kernel.ComponentModelBuilder.AddContributor(new LifestyleRegistrationMutator(originalLifestyle: LifestyleType.PerWebRequest, newLifestyleType: LifestyleType.Scoped));
+            
 
             Container.Install(FromAssembly.This());
             Container.Register(Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>());
@@ -72,25 +73,16 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
             return connectionString.ConnectionString;
         }
 
-#pragma warning disable 618
-        public class Candidate : AggregateRoot<Candidate>
-#pragma warning restore 618
+        public class Candidate : EventStoredAggregateRoot<Candidate>
         {
-            public static Candidate Create(Guid id)
+            public Candidate(Guid candidateId)
             {
-                var result = new Candidate();
-                result.ApplyEvent(new CandidateCreatedEvent(id));
-                return result;
-            }
-
-            public void Apply(CandidateCreatedEvent evt)
-            {
-                SetIdBeVerySureYouKnowWhatYouAreDoing(evt.AggregateRootId);
+                Register(Handler.For<CandidateCreatedEvent>().OnApply(createdEvent => SetIdBeVerySureYouKnowWhatYouAreDoing(createdEvent.AggregateRootId)));
+                ApplyEvent(new CandidateCreatedEvent(candidateId));
             }
         }
-
-        [UsedImplicitly]
-        public class CreateCandidateCommandHandler : IHandleMessages<CreateCandidateCommand>
+               
+        public class CreateCandidateCommandHandler : IHandleMessages<CreateCandidateCommand>            
         {
             private readonly IEventStoreSession _session;
 
@@ -101,13 +93,12 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
 
             public void Handle(CreateCandidateCommand command)
             {
-                var c = Candidate.Create(command.AggregateRootId);
+                var c = new Candidate(command.AggregateRootId);
                 _session.Save(c);
                 _session.SaveChanges();
             }
         }
 
-        [UsedImplicitly]
         public class CandidateViewModelUpdater : ViewModelUpdater<CandidateViewModelUpdater, CandidateViewModel, CandidateCreatedEvent, IDocumentDbSession>
         {
             public CandidateViewModelUpdater(IDocumentDbSession session) : base(session, creationEvent: typeof(CandidateCreatedEvent))
@@ -142,3 +133,5 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
         }
     }
 }
+// ReSharper restore MemberCanBePrivate.Global
+// ReSharper restore RedundantArgumentDefaultValue
