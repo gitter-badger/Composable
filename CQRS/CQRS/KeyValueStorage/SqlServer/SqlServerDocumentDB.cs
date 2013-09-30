@@ -6,6 +6,7 @@ using System.Data.SqlClient;
 using System.Linq;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Transactions;
 using Composable.DDD;
 using Composable.NewtonSoft;
 using Composable.System;
@@ -19,6 +20,7 @@ namespace Composable.KeyValueStorage.SqlServer
 {
     public class SqlServerDocumentDb : IDocumentDb
     {
+        private static readonly ILog Log = LogManager.GetLogger(typeof(SqlServerDocumentDb));
         public readonly string ConnectionString;
 
         private static readonly JsonSerializerSettings _jsonSettings = JsonSettings.JsonSerializerSettings;
@@ -102,6 +104,8 @@ WHERE Id=@Id AND ValueTypeId
 
         public void Add<T>(object id, T value)
         {
+            Log.DebugFormat("Add: Transaction.Current: {0}", Transaction.Current.LogText());
+
             EnsureInitialized();
 
             string idString = GetIdString(id);
@@ -355,12 +359,14 @@ ELSE
 
         private static void EnsureInitialized(string connectionString)
         {
+            Log.DebugFormat("EnsureInitialized: Transaction.Current: {0}", Transaction.Current.LogText());
             lock(LockObject)
             {
                 if(!VerifiedConnections.ContainsKey(connectionString))
                 {
                     using(var connection = OpenSession(connectionString))
                     {
+                        Log.DebugFormat("EnsureInitialized opened connection: Transaction.Current: {0}", Transaction.Current.LogText());
                         using(var checkForValueTypeCommand = connection.CreateCommand())
                         {
                             checkForValueTypeCommand.CommandText = "select count(*) from sys.tables where name = 'ValueType'";
@@ -410,7 +416,9 @@ REFERENCES [dbo].[ValueType] ([Id])
 ALTER TABLE [dbo].[Store] CHECK CONSTRAINT [FK_ValueType_Store]
 
 ";
+                                    Log.DebugFormat("Creating DB: Transaction.Current: {0}", Transaction.Current.LogText());
                                     createStoreCommand.ExecuteNonQuery();
+                                    Log.DebugFormat("Created DB: Transaction.Current: {0}", Transaction.Current.LogText());
                                 }
                             }
                         }
@@ -428,10 +436,14 @@ ALTER TABLE [dbo].[Store] CHECK CONSTRAINT [FK_ValueType_Store]
         {
             lock(LockObject)
             {
+                Log.DebugFormat("RefreshKnownTypes Before open connection: Transaction.Current: {0}", Transaction.Current.LogText());
                 using(var connection = OpenSession(connectionString))
                 {
+                    Log.DebugFormat("RefreshKnownTypes After open connection: Transaction.Current: {0}", Transaction.Current.LogText());
+                    Log.DebugFormat("{0}, {1}, {2}", connection.ConnectionString, connection.ConnectionTimeout, connection.State);
                     using(var findTypesCommand = connection.CreateCommand())
                     {
+                        Log.Debug(findTypesCommand);
                         findTypesCommand.CommandText = "SELECT DISTINCT ValueType, Id FROM ValueType";
                         using(var reader = findTypesCommand.ExecuteReader())
                         {

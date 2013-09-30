@@ -75,11 +75,22 @@ namespace Composable.KeyValueStorage.Population
 
             public void Prepare(PreparingEnlistment preparingEnlistment)
             {
-                Console.WriteLine("_ambientTransactionAfterCreation == Transaction.Current->{0}", _ambientTransactionAfterCreation != Transaction.Current);
-                PrepareCalled = true;                 
-                UsageGuard.RunInContextExcludedFromSingleUseRule(() => _unitOfWork.Commit());
-                _prepared = true;
-                preparingEnlistment.Prepared();                
+                try
+                {
+                    Console.WriteLine("_ambientTransactionAfterCreation == Transaction.Current->{0}", _ambientTransactionAfterCreation != Transaction.Current);
+                    PrepareCalled = true;
+                    using (var trans = new TransactionScope(_ambientTransactionAfterCreation))
+                    {
+                        UsageGuard.RunInContextExcludedFromSingleUseRule(() => _unitOfWork.Commit());
+                        trans.Complete();
+                    }
+                    _prepared = true;
+                    preparingEnlistment.Prepared();
+                }
+                catch(Exception e)
+                {
+                    preparingEnlistment.ForceRollback(e);
+                }
             }
 
             override public bool IsActive {get { return !CommitCalled && !RollBackCalled && !InDoubtCalled; }}

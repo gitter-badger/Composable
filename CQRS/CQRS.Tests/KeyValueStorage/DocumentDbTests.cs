@@ -20,6 +20,10 @@ namespace CQRS.Tests.KeyValueStorage
     [TestFixture]
     public abstract class DocumentDbTests
     {
+        static DocumentDbTests()
+        {
+            log4net.Config.XmlConfigurator.Configure();
+        }
         protected abstract IDocumentDb CreateStore();
 
         protected static IDocumentDbSession OpenSession(IDocumentDb store, ISingleContextUseGuard guard = null)
@@ -333,7 +337,7 @@ namespace CQRS.Tests.KeyValueStorage
 
         [Test]
         public void AddingRemovingAndAddingObjectInTransactionScopeResultsInObjectBeingSaved()
-        {
+        {            
             var store = CreateStore();
 
             var user = new User { Id = Guid.NewGuid() };

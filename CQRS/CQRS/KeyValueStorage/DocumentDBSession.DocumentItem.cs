@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Transactions;
 using Composable.System.Linq;
+using log4net;
 
 namespace Composable.KeyValueStorage
 {
@@ -8,6 +10,7 @@ namespace Composable.KeyValueStorage
     {        
         internal class DocumentItem
         {
+            private static ILog Log = LogManager.GetLogger(typeof(DocumentItem));
             private readonly IDocumentDb _backingStore;
             private DocumentKey Key { get; set; }
 
@@ -56,18 +59,22 @@ namespace Composable.KeyValueStorage
                 //Avoid reentrancy issues.
                 if(IsCommitting)
                 {
+                    Log.DebugFormat("Exiting to avoid reentrancy Transaction.Current: {0}", Transaction.Current.LogText());
                     return;
                 }
                 IsCommitting = true;
+                Log.DebugFormat("Committing Transaction.Current: {0}", Transaction.Current.LogText());
                 using(new DisposeAction(() => IsCommitting = false))//Reset IsCommitting to false once we are done committing.
                 {
                     if(ScheduledForAdding)
                     {
+                        Log.DebugFormat("Adding To Backing Store Transaction.Current: {0}", Transaction.Current.LogText());
                         IsInBackingStore = true;
                         _backingStore.Add(Key.Id, Document);
                     }
                     else if(ScheduledForRemoval)
                     {
+                        Log.DebugFormat("Removing from Backing Store Transaction.Current: {0}", Transaction.Current.LogText());
                         var docType = Document.GetType();
                         Document = null;
                         IsInBackingStore = false;
@@ -76,6 +83,7 @@ namespace Composable.KeyValueStorage
                     }
                     else if(ScheduledForUpdate)
                     {
+                        Log.DebugFormat("Updating in Backing Store Transaction.Current: {0}", Transaction.Current.LogText());
                         _backingStore.Update(Seq.Create(new KeyValuePair<string, object>(Key.Id, Document)));
                     }
                 }

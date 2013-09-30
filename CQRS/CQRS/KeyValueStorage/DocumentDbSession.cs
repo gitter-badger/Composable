@@ -162,11 +162,12 @@ namespace Composable.KeyValueStorage
 
             _idMap.Add(id, value);
             if(!IsPartOfUnitOfWorkOrTransaction)
-            {                
+            {
+                DebugLogWithUnitInformation("Save");
                 documentItem.CommitChangesToBackingStore();
             }else
             {
-                Log.DebugFormat("{0} postponed persisting object from call to Save since participating in a unit of work", _id);
+                DebugLogWithUnitInformation("Postponed Save");
             }            
         }
 
@@ -201,11 +202,12 @@ namespace Composable.KeyValueStorage
             _idMap.Remove<T>(id);
             if (!IsPartOfUnitOfWorkOrTransaction)
             {
+                DebugLogWithUnitInformation("Delete");
                 documentItem.CommitChangesToBackingStore();
             }
             else
             {
-                Log.DebugFormat("{0} postponed deleting object since participating in a unit of work", _id);
+                DebugLogWithUnitInformation("Postponed Delete");
             }            
         }
 
@@ -213,18 +215,24 @@ namespace Composable.KeyValueStorage
         {
             CheckContextAndJoinAnyAmbientTransaction();
             if (!IsPartOfUnitOfWorkOrTransaction)
-            {                
+            {
+                DebugLogWithUnitInformation("SaveChanges");
                 InternalSaveChanges();
             }else
             {
-                Log.DebugFormat("{0} Ignored call to SaveChanges since participating in a unit of work", _id);
+                DebugLogWithUnitInformation("Postponed SaveChanges");
             }
         }
 
         private void InternalSaveChanges()
         {
-            Log.DebugFormat("{0} saving changes. Unit of work: {1}",_id, _unitOfWork ?? (object)"null");            
+            DebugLogWithUnitInformation("InternalSaveChanges");
             _handledDocuments.ForEach(p => p.Value.CommitChangesToBackingStore());
+        }
+
+        private void DebugLogWithUnitInformation(string message)
+        {
+            Log.DebugFormat("{0} Unit of work: {1}, _ambientTransaction: {2}, Transaction.Current {3} Id: {4}", message, _unitOfWork.LogText(), _ambientTransaction.LogText(), Transaction.Current.LogText(), _id);            
         }
 
         public virtual IEnumerable<T> GetAll<T>() where T : IHasPersistentIdentity<Guid>
@@ -286,9 +294,19 @@ namespace Composable.KeyValueStorage
         {
             if(!_isInTransaction && Transaction.Current != null)
             {
-                Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                DebugLogWithUnitInformation("Joining Transaction {0}".FormatWith(Transaction.Current.LogText()));
+                Transaction.Current.EnlistDurable(_id, this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                //Transaction.Current.EnlistDurable(_id, this, EnlistmentOptions.None);
+                //Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                //Transaction.Current.EnlistVolatile(this, EnlistmentOptions.None);
                 _isInTransaction = true;
-                _ambientTransaction = Transaction.Current.Clone();
+                //_ambientTransaction = Transaction.Current.Clone();
+                _ambientTransaction = Transaction.Current;
+
+                _ambientTransaction.TransactionCompleted += (sender, args) => DebugLogWithUnitInformation("ambient transaction completed: {0}".FormatWith(args.Transaction.LogText()));
+                Transaction.Current.TransactionCompleted += (sender, args) => DebugLogWithUnitInformation("source transaction completed: {0}".FormatWith(args.Transaction.LogText()));
+
+                DebugLogWithUnitInformation("Joined Transaction");
             }else if(_isInTransaction && Transaction.Current != _ambientTransaction)
             {
                 throw new Exception("WTF");
@@ -300,46 +318,61 @@ namespace Composable.KeyValueStorage
 
         void IEnlistmentNotification.Prepare(PreparingEnlistment preparingEnlistment)
         {
+            DebugLogWithUnitInformation("IEnlistmentNotification.Prepare");
             try
             {
+                DebugLogWithUnitInformation("Before new TransactionScope( _ambientTransaction)");
                 using(var scope = new TransactionScope( _ambientTransaction))
                 {
+                    DebugLogWithUnitInformation("Within new TransactionScope( _ambientTransaction)");
                     InternalSaveChanges();
                     scope.Complete();
                 }
-                preparingEnlistment.Prepared();
+                //preparingEnlistment.Prepared();
+                preparingEnlistment.Done();
+                _isInTransaction = false;
+                //_ambientTransaction.Dispose();
+                _ambientTransaction = null;
             }
             catch(Exception exception)
             {
-                _isInTransaction = false;
-                _ambientTransaction.Dispose();
-                _ambientTransaction = null;
                 Log.Error("DTC transaction prepare phase failed", exception);
+                DebugLogWithUnitInformation("Before preparingEnlistment.ForceRollback(exception)");
                 preparingEnlistment.ForceRollback(exception);
+                //preparingEnlistment.Done();
+                 DebugLogWithUnitInformation("After preparingEnlistment.ForceRollback(exception)");
+                _isInTransaction = false;
+                //DebugLogWithUnitInformation("Before _ambientTransaction.Dispose()");
+                //_ambientTransaction.Dispose();
+                //DebugLogWithUnitInformation("After _ambientTransaction.Dispose()");
+                _ambientTransaction = null;
             }
         }
 
         void IEnlistmentNotification.Commit(Enlistment enlistment)
         {
+            DebugLogWithUnitInformation("IEnlistmentNotification.Commit");
             _isInTransaction = false;
-            _ambientTransaction.Dispose();
+            //_ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }
 
         void IEnlistmentNotification.Rollback(Enlistment enlistment)
         {
+            DebugLogWithUnitInformation("IEnlistmentNotification.Rollback");
             ((IUnitOfWorkParticipant)this).Rollback(_unitOfWork);
             _isInTransaction = false;
-            _ambientTransaction.Dispose();
+            //_ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }
 
         void IEnlistmentNotification.InDoubt(Enlistment enlistment)
         {
+            DebugLogWithUnitInformation("IEnlistmentNotification.InDoubt");
             _isInTransaction = false;
-            _ambientTransaction.Dispose();
+            //_ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }
