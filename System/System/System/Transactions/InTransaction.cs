@@ -15,7 +15,7 @@ namespace Composable.System.Transactions
         public static void Execute(Action action)
         {
             Contract.Requires(action != null);
-            using(var transaction = new TransactionScope())
+            using (var transaction = new DistributedTransactionScope())
             {
                 action();
                 transaction.Complete();
