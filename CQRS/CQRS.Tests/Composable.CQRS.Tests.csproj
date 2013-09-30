@@ -170,6 +170,7 @@
     <Compile Include="Query\WhenExecutingQueryStructuremap.cs" />
     <Compile Include="Query\WhenExecutingQueryWindsor.cs" />
     <Compile Include="StubMain.cs" />
+    <Compile Include="UnitOfWorkTests\IEnlistmentNotificationImplementationTests.cs" />
     <Compile Include="UnitOfWorkTests\WindsorUnitOfWorkExtensionsTests.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -184,6 +185,10 @@
     <ProjectReference Include="..\..\System\System\Composable.Core.csproj">
       <Project>{3632254D-0C4A-4EB8-B388-4C99F8939584}</Project>
       <Name>Composable.Core</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\CQRS.Windsor\Composable.CQRS.Windsor.csproj">
+      <Project>{E1705F7A-936C-49E1-9418-9AB2FA34678E}</Project>
+      <Name>Composable.CQRS.Windsor</Name>
     </ProjectReference>
     <ProjectReference Include="..\CQRS\Composable.CQRS.csproj">
       <Project>{3B776BD4-0EDD-4A83-BC9A-3A53D6649AB0}</Project>

@@ -302,7 +302,7 @@ namespace Composable.KeyValueStorage
         {
             try
             {
-                using(var scope = new TransactionScope(_ambientTransaction))
+                using(var scope = new TransactionScope( _ambientTransaction))
                 {
                     InternalSaveChanges();
                     scope.Complete();
@@ -311,6 +311,9 @@ namespace Composable.KeyValueStorage
             }
             catch(Exception exception)
             {
+                _isInTransaction = false;
+                _ambientTransaction.Dispose();
+                _ambientTransaction = null;
                 Log.Error("DTC transaction prepare phase failed", exception);
                 preparingEnlistment.ForceRollback(exception);
             }
@@ -319,6 +322,7 @@ namespace Composable.KeyValueStorage
         void IEnlistmentNotification.Commit(Enlistment enlistment)
         {
             _isInTransaction = false;
+            _ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }
@@ -327,6 +331,7 @@ namespace Composable.KeyValueStorage
         {
             ((IUnitOfWorkParticipant)this).Rollback(_unitOfWork);
             _isInTransaction = false;
+            _ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }
@@ -334,6 +339,7 @@ namespace Composable.KeyValueStorage
         void IEnlistmentNotification.InDoubt(Enlistment enlistment)
         {
             _isInTransaction = false;
+            _ambientTransaction.Dispose();
             _ambientTransaction = null;
             enlistment.Done();
         }

@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<packages>
+  <package id="AutoMapper" version="2.0.0.118" />
+  <package id="Castle.Core" version="2.5.2" />
+  <package id="Castle.Windsor" version="2.5.3" />
+  <package id="CommonServiceLocator" version="1.0" />
+  <package id="CommonServiceLocator.WindsorAdapter" version="1.0" />
+  <package id="log4net" version="1.2.10" />
+  <package id="Manpower.Applications.Authentication.GlobalEvents.Package" version="1.1.0.3" />
+  <package id="Manpower.Applications.CVManagement.Events.Package" version="1.2.0.1" />
+  <package id="Manpower.Applications.ReferenceDataModule.ViewModels.Package" version="1.1.0.4" />
+  <package id="Manpower.Applications.Shared.Diffing.Package" version="1.0.4262.23744" />
+  <package id="Newtonsoft.Json" version="4.0.2" />
+  <package id="NUnit" version="2.5.10.11092" />
+  <package id="Shared.Testing.Dummyfication" version="1.0.4262.23745" />
+<<<<<<< HEAD
+=======
+  <package id="Manpower.Applications.ReferenceDataModule.ViewModels.Package" version="1.1.0.1" />
+>>>>>>> origin/master
+</packages>
