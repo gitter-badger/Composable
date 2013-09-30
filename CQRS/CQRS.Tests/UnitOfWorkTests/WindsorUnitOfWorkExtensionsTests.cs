@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Runtime.Remoting.Messaging;
 using System.Transactions;
 using Castle.MicroKernel.Registration;
 using Castle.Windsor;
@@ -29,7 +28,7 @@ namespace CQRS.Tests.UnitOfWorkTests
                 unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
                 unitOfWorkSpy.Committed.Should().Be(false);
                 unitOfWorkSpy.RolledBack.Should().Be(false);
-                using (var innerScope = container.BeginTransactionalUnitOfWorkScope())
+                using(var innerScope = container.BeginTransactionalUnitOfWorkScope())
                 {
                     innerScope.Commit();
                     unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
@@ -43,7 +42,7 @@ namespace CQRS.Tests.UnitOfWorkTests
             unitOfWorkSpy.UnitOfWork.Should().Be(null);
             unitOfWorkSpy.Committed.Should().Be(false);
             unitOfWorkSpy.RolledBack.Should().Be(true);
-        }    
+        }
 
         [Test]
         public void CommittingTheOuterScopeCommitsDuh()
@@ -60,7 +59,7 @@ namespace CQRS.Tests.UnitOfWorkTests
                 unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
                 unitOfWorkSpy.Committed.Should().Be(false);
                 unitOfWorkSpy.RolledBack.Should().Be(false);
-                using (var innerScope = container.BeginTransactionalUnitOfWorkScope())
+                using(var innerScope = container.BeginTransactionalUnitOfWorkScope())
                 {
                     innerScope.Commit();
                     unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
@@ -76,13 +75,89 @@ namespace CQRS.Tests.UnitOfWorkTests
             unitOfWorkSpy.Committed.Should().Be(true);
             unitOfWorkSpy.RolledBack.Should().Be(false);
         }
+
+        [Test]
+        public void CommittingTheOuterScopeCommitsOnlyOnceAmbientTransactionDoes()
+        {
+            var container = new WindsorContainer();
+            var unitOfWorkSpy = new UnitOfWorkSpy();
+            container.Register(
+                Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>(),
+                Component.For<IUnitOfWorkParticipant>().Instance(unitOfWorkSpy)
+                );
+
+            using(var ambientTransaction = new TransactionScope())
+            {
+                using(var outerScope = container.BeginTransactionalUnitOfWorkScope())
+                {
+                    unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                    unitOfWorkSpy.Committed.Should().Be(false);
+                    unitOfWorkSpy.RolledBack.Should().Be(false);
+                    using(var innerScope = container.BeginTransactionalUnitOfWorkScope())
+                    {
+                        innerScope.Commit();
+                        unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                        unitOfWorkSpy.Committed.Should().Be(false);
+                        unitOfWorkSpy.RolledBack.Should().Be(false);
+                    }
+                    unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                    unitOfWorkSpy.Committed.Should().Be(false);
+                    unitOfWorkSpy.RolledBack.Should().Be(false);
+                    outerScope.Commit();
+                }
+                unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                unitOfWorkSpy.Committed.Should().Be(false);
+                unitOfWorkSpy.RolledBack.Should().Be(false);
+                ambientTransaction.Complete();
+            }
+            unitOfWorkSpy.UnitOfWork.Should().Be(null);
+            unitOfWorkSpy.Committed.Should().Be(true);
+            unitOfWorkSpy.RolledBack.Should().Be(false);
+        }
+
+        [Test]
+        public void UnitRollsBackIfTheAmbientTransactionDoes()
+        {
+            var container = new WindsorContainer();
+            var unitOfWorkSpy = new UnitOfWorkSpy();
+            container.Register(
+                Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>(),
+                Component.For<IUnitOfWorkParticipant>().Instance(unitOfWorkSpy)
+                );
+
+            using(new TransactionScope()) {
+                using (var outerScope = container.BeginTransactionalUnitOfWorkScope())
+                {
+                    unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                    unitOfWorkSpy.Committed.Should().Be(false);
+                    unitOfWorkSpy.RolledBack.Should().Be(false);
+                    using (var innerScope = container.BeginTransactionalUnitOfWorkScope())
+                    {
+                        innerScope.Commit();
+                        unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                        unitOfWorkSpy.Committed.Should().Be(false);
+                        unitOfWorkSpy.RolledBack.Should().Be(false);
+                    }
+                    unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                    unitOfWorkSpy.Committed.Should().Be(false);
+                    unitOfWorkSpy.RolledBack.Should().Be(false);
+                    outerScope.Commit();
+                }
+                unitOfWorkSpy.UnitOfWork.Should().NotBe(null);
+                unitOfWorkSpy.Committed.Should().Be(false);
+                unitOfWorkSpy.RolledBack.Should().Be(false);
+            }
+            unitOfWorkSpy.UnitOfWork.Should().Be(null);
+            unitOfWorkSpy.Committed.Should().Be(false);
+            unitOfWorkSpy.RolledBack.Should().Be(true);
+        }
     }
 
     public class UnitOfWorkSpy : IUnitOfWorkParticipant
     {
         public IUnitOfWork UnitOfWork { get; private set; }
         public Guid Id { get; private set; }
-        
+
         public void Join(IUnitOfWork unit)
         {
             UnitOfWork = unit;
@@ -93,6 +168,7 @@ namespace CQRS.Tests.UnitOfWorkTests
             Committed = true;
             UnitOfWork = null;
         }
+
         public bool Committed { get; set; }
 
         public void Rollback(IUnitOfWork unit)
@@ -100,6 +176,7 @@ namespace CQRS.Tests.UnitOfWorkTests
             RolledBack = true;
             UnitOfWork = null;
         }
+
         public bool RolledBack { get; set; }
     }
 }

@@ -44,34 +44,42 @@ namespace Composable.KeyValueStorage.Population
             public abstract bool IsActive { get; }
         }
 
-        private class TransactionalUnitOfWorkWindsorScope : TransactionalUnitOfWorkWindsorScopeBase
+        private class TransactionalUnitOfWorkWindsorScope : TransactionalUnitOfWorkWindsorScopeBase, IEnlistmentNotification
         {
             private readonly TransactionScope _transactionScopeWeCreatedAndOwn;
             private readonly IUnitOfWork _unitOfWork;
-            private bool _committed;
+            private bool _prepared;
+            private readonly Transaction _ambientTransactionAfterCreation;
 
             public TransactionalUnitOfWorkWindsorScope(IWindsorContainer container)
             {
                 _transactionScopeWeCreatedAndOwn = new TransactionScope();
+                _ambientTransactionAfterCreation = Transaction.Current;
+                _ambientTransactionAfterCreation.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
                 _unitOfWork = new UnitOfWork(container.Resolve<ISingleContextUseGuard>());
                 _unitOfWork.AddParticipants(container.ResolveAll<IUnitOfWorkParticipant>());
             }
 
             override public void Dispose()
             {
-                CurrentScope = null;
-                if(!_committed)
-                {
-                    _unitOfWork.Rollback();
-                }
                 _transactionScopeWeCreatedAndOwn.Dispose();
+                CurrentScope = null;            
             }
+
+
 
             override public void Commit()
             {
-                _unitOfWork.Commit();
                 _transactionScopeWeCreatedAndOwn.Complete();
-                _committed = true;
+            }
+
+            public void Prepare(PreparingEnlistment preparingEnlistment)
+            {
+                Console.WriteLine("_ambientTransactionAfterCreation == Transaction.Current->{0}", _ambientTransactionAfterCreation != Transaction.Current);
+                PrepareCalled = true;                 
+                UsageGuard.RunInContextExcludedFromSingleUseRule(() => _unitOfWork.Commit());
+                _prepared = true;
+                preparingEnlistment.Prepared();                
             }
 
             override public bool IsActive {get { return !CommitCalled && !RollBackCalled && !InDoubtCalled; }}
@@ -79,7 +87,26 @@ namespace Composable.KeyValueStorage.Population
             public bool PrepareCalled { get; private set; }
             public bool CommitCalled { get; private set; }
             public bool RollBackCalled { get; private set; }
-            public bool InDoubtCalled { get; private set; }           
+            public bool InDoubtCalled { get; private set; }
+
+            void IEnlistmentNotification.Commit(Enlistment enlistment)
+            {
+                CommitCalled = true;
+                enlistment.Done();
+            }
+
+            void IEnlistmentNotification.Rollback(Enlistment enlistment)
+            {
+                RollBackCalled = true;
+                UsageGuard.RunInContextExcludedFromSingleUseRule(() => _unitOfWork.Rollback());
+                enlistment.Done();
+            }
+
+            void IEnlistmentNotification.InDoubt(Enlistment enlistment)
+            {
+                InDoubtCalled = true;
+                enlistment.Done();
+            }            
         }
 
 
