@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Transactions;
 using Composable.DDD;
 using Composable.KeyValueStorage;
 using Composable.System;
@@ -214,6 +215,7 @@ namespace CQRS.Tests.KeyValueStorage
             }
         }
 
+        #region Unit of work support
 
         [Test]
         public void AddingAndRemovingObjectInUnitOfWorkResultsInNoObjectBeingSaved()
@@ -240,7 +242,7 @@ namespace CQRS.Tests.KeyValueStorage
         }
 
         [Test]
-        public void AddingRemovingAndAddingObjectInUnitOfWorkResultsInNoObjectBeingSaved()
+        public void AddingRemovingAndAddingObjectInUnitOfWorkResultsInObjectBeingSaved()
         {
             var store = CreateStore();
 
@@ -263,6 +265,160 @@ namespace CQRS.Tests.KeyValueStorage
                 session.TryGet(user.Id, out user).Should().BeTrue();
             }
         }
+
+        [Test]
+        public void LoadingRemovingAndAddingObjectInUnitOfWorkResultsInObjectBeingSaved()
+        {
+            var store = CreateStore();
+
+            var user = new User { Id = Guid.NewGuid() };
+
+            using (var session = OpenSession(store))
+            {
+                session.Save(user.Id, user);
+                session.SaveChanges();
+            }
+
+            using (var session = OpenSession(store))
+            {
+                var uow = new UnitOfWork(new SingleThreadUseGuard());
+                uow.AddParticipant((IUnitOfWorkParticipant)session);
+
+                user = session.Get<User>(user.Id);
+                session.Delete(user);
+
+                User tmpUser;
+                session.TryGet(user.Id, out tmpUser).Should().Be(false);
+                session.Save(user);
+                session.TryGet(user.Id, out tmpUser).Should().Be(true);
+                session.Delete(user);
+                session.TryGet(user.Id, out tmpUser).Should().Be(false);
+                session.Save(user);
+                session.TryGet(user.Id, out tmpUser).Should().Be(true);
+
+                uow.Commit();
+            }
+
+            using (var session = OpenSession(store))
+            {
+                session.TryGet(user.Id, out user).Should().Be(true);
+            }
+        }
+
+
+        [Test]
+        public void AddingAndRemovingObjectInTransactionScopeResultsInNoObjectBeingSaved()
+        {
+            var store = CreateStore();
+
+            var user = new User { Id = Guid.NewGuid() };
+
+            using (var session = OpenSession(store))
+            {
+                using(var scope = new TransactionScope())
+                {
+
+                    session.Save(user.Id, user);
+                    session.Delete(user);
+
+                    scope.Complete();
+                }
+            }
+
+            using (var session = OpenSession(store))
+            {
+                session.TryGet(user.Id, out user).Should().BeFalse();
+            }
+        }
+
+        [Test]
+        public void AddingRemovingAndAddingObjectInTransactionScopeResultsInObjectBeingSaved()
+        {
+            var store = CreateStore();
+
+            var user = new User { Id = Guid.NewGuid() };
+
+            using (var session = OpenSession(store))
+            {
+                using(var scope = new TransactionScope(TransactionScopeOption.Required, 100.Seconds()))
+                {
+
+                    session.Save(user.Id, user);
+                    session.Delete(user);
+                    session.Save(user.Id, user);
+
+                    scope.Complete();
+                }
+            }
+
+            using (var session = OpenSession(store))
+            {
+                session.TryGet(user.Id, out user).Should().BeTrue();
+            }
+        }
+
+        [Test]
+        public void LoadingRemovingAndAddingObjectInTransactionScopeResultsInObjectBeingSaved()
+        {
+            var store = CreateStore();
+
+            var user = new User { Id = Guid.NewGuid() };
+
+            using (var session = OpenSession(store))
+            {
+                session.Save(user.Id, user);
+                session.SaveChanges();
+            }
+
+            using (var session = OpenSession(store))
+            {
+                using(var scope = new TransactionScope())
+                {
+
+                    user = session.Get<User>(user.Id);
+                    session.Delete(user);
+
+                    User tmpUser;
+                    session.TryGet(user.Id, out tmpUser).Should().Be(false);
+                    session.Save(user);
+                    session.TryGet(user.Id, out tmpUser).Should().Be(true);
+                    session.Delete(user);
+                    session.TryGet(user.Id, out tmpUser).Should().Be(false);
+                    session.Save(user);
+                    session.TryGet(user.Id, out tmpUser).Should().Be(true);
+
+                    scope.Complete();
+                }
+            }
+
+            using (var session = OpenSession(store))
+            {
+                session.TryGet(user.Id, out user).Should().Be(true);
+            }
+        }
+
+        [Test]
+        public void SavingUserWithoutCommittingTransactionScopeShouldResultInNoUserBeingSaved()
+        {
+            var store = CreateStore();
+
+            var user = new User { Id = Guid.NewGuid() };
+
+            using (var session = OpenSession(store))
+            {
+                using(var transaction  = new TransactionScope())
+                {
+                    session.Save(user.Id, user);   
+                }                                
+            }
+
+            using (var session = OpenSession(store))
+            {
+                session.TryGet(user.Id, out user).Should().Be(false);
+            }
+        }
+
+        #endregion
 
         [Test]
         public void ObjectsWhoseKeysDifferOnlyByCaseAreConsideredTheSameObjectForCompatabilityWithSqlServer()
@@ -377,45 +533,6 @@ namespace CQRS.Tests.KeyValueStorage
             using (var session = OpenSession(store))
             {
                 session.TryGet(user.Id, out user).Should().BeFalse();
-            }
-        }
-
-        [Test]
-        public void LoadingRemovingAndAddingObjectInUnitOfWorkResultsInObjectBeingSaved()
-        {
-            var store = CreateStore();
-
-            var user = new User { Id = Guid.NewGuid() };
-
-            using (var session = OpenSession(store))
-            {
-                session.Save(user.Id, user);
-                session.SaveChanges();
-            }
-
-            using (var session = OpenSession(store))
-            {
-                var uow = new UnitOfWork(new SingleThreadUseGuard());
-                uow.AddParticipant((IUnitOfWorkParticipant)session);
-
-                user = session.Get<User>(user.Id);
-                session.Delete(user);
-            
-                User tmpUser;
-                session.TryGet(user.Id, out tmpUser).Should().Be(false);
-                session.Save(user);
-                session.TryGet(user.Id, out tmpUser).Should().Be(true);
-                session.Delete(user);
-                session.TryGet(user.Id, out tmpUser).Should().Be(false);
-                session.Save(user);
-                session.TryGet(user.Id, out tmpUser).Should().Be(true);
-
-                uow.Commit();
-            }
-
-            using (var session = OpenSession(store))
-            {
-                session.TryGet(user.Id, out user).Should().Be(true);
             }
         }
 

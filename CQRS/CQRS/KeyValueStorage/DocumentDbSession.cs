@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Transactions;
 using Composable.DDD;
 using Composable.System.Linq;
 using System.Linq;
@@ -7,10 +8,11 @@ using Composable.SystemExtensions.Threading;
 using Composable.UnitsOfWork;
 using log4net;
 using Composable.System;
+using NServiceBus;
 
 namespace Composable.KeyValueStorage
 {
-    public partial class DocumentDbSession : IDocumentDbSession, IUnitOfWorkParticipant
+    public partial class DocumentDbSession : IDocumentDbSession, IUnitOfWorkParticipant, IEnlistmentNotification
     {
         [ThreadStatic]
         internal static bool UseUpdateLock;
@@ -30,6 +32,7 @@ namespace Composable.KeyValueStorage
             UsageGuard = usageGuard;
             BackingStore = backingStore;
             Interceptor = interceptor;
+            JoinAmbientTransactionIfRequired();
         }
 
         public IObservable<IDocumentUpdated> DocumentUpdated { get { return BackingStore.DocumentUpdated; } }
@@ -45,7 +48,7 @@ namespace Composable.KeyValueStorage
             {
                 throw new ArgumentException("You cannot query by id for an interface type. There is no guarantee of uniqueness");
             }
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
 
             if (_idMap.TryGet(key, out value) && documentType.IsAssignableFrom(value.GetType()))
             {
@@ -85,7 +88,7 @@ namespace Composable.KeyValueStorage
 
         public virtual TValue GetForUpdate<TValue>(object key)
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             using(new UpdateLock())
             {
                 return Get<TValue>(key);
@@ -94,7 +97,7 @@ namespace Composable.KeyValueStorage
 
         public virtual bool TryGetForUpdate<TValue>(object key, out TValue value)
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             using (new UpdateLock())
             {
                 return TryGet(key, out value);
@@ -116,7 +119,7 @@ namespace Composable.KeyValueStorage
 
         public IEnumerable<TValue> Get<TValue>(IEnumerable<Guid> ids) where TValue : IHasPersistentIdentity<Guid>
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
 
             var stored = BackingStore.GetAll<TValue>(ids);
             
@@ -134,7 +137,7 @@ namespace Composable.KeyValueStorage
 
         public virtual TValue Get<TValue>(object key)
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             TValue value;
             if(TryGet(key, out value))
             {
@@ -146,7 +149,7 @@ namespace Composable.KeyValueStorage
 
         public virtual void Save<TValue>(object id, TValue value)
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);            
+            CheckContextAndJoinAnyAmbientTransaction();            
 
             TValue ignored;
             if (TryGetInternal(id, value.GetType(), out ignored))
@@ -158,7 +161,7 @@ namespace Composable.KeyValueStorage
             documentItem.Save(value);
 
             _idMap.Add(id, value);
-            if(_unitOfWork == null)
+            if(!IsPartOfUnitOfWorkOrTransaction)
             {                
                 documentItem.CommitChangesToBackingStore();
             }else
@@ -169,7 +172,7 @@ namespace Composable.KeyValueStorage
 
         public virtual void Save<TEntity>(TEntity entity) where TEntity : IHasPersistentIdentity<Guid>
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             if(entity.Id.Equals(Guid.Empty))
             {
                 throw new DocumentIdIsEmptyGuidException();
@@ -179,13 +182,13 @@ namespace Composable.KeyValueStorage
 
         public virtual void Delete<TEntity>(TEntity entity) where TEntity : IHasPersistentIdentity<Guid>
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             Delete<TEntity>(entity.Id);
         }
 
         public virtual void Delete<T>(object id)
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             T ignored;
             if(!TryGet(id, out ignored))
             {
@@ -196,7 +199,7 @@ namespace Composable.KeyValueStorage
             documentItem.Delete();
 
             _idMap.Remove<T>(id);
-            if(_unitOfWork == null)
+            if (!IsPartOfUnitOfWorkOrTransaction)
             {
                 documentItem.CommitChangesToBackingStore();
             }
@@ -208,8 +211,8 @@ namespace Composable.KeyValueStorage
 
         public virtual void SaveChanges()
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
-            if (_unitOfWork == null)
+            CheckContextAndJoinAnyAmbientTransaction();
+            if (!IsPartOfUnitOfWorkOrTransaction)
             {                
                 InternalSaveChanges();
             }else
@@ -226,13 +229,12 @@ namespace Composable.KeyValueStorage
 
         public virtual IEnumerable<T> GetAll<T>() where T : IHasPersistentIdentity<Guid>
         {
-            UsageGuard.AssertNoContextChangeOccurred(this);
+            CheckContextAndJoinAnyAmbientTransaction();
             var stored = BackingStore.GetAll<T>();
             stored.Where(document => !_idMap.Contains(typeof (T), document.Id))
                 .ForEach(unloadedDocument => OnInitialLoad(unloadedDocument.Id, unloadedDocument));
             return _idMap.Select(pair => pair.Value).OfType<T>();
-        }
-
+        }        
 
 
         public virtual void Dispose()
@@ -256,18 +258,80 @@ namespace Composable.KeyValueStorage
 
         void IUnitOfWorkParticipant.Join(IUnitOfWork unit)
         {
+            CheckContextAndJoinAnyAmbientTransaction();
             _unitOfWork = unit;
         }
 
         void IUnitOfWorkParticipant.Commit(IUnitOfWork unit)
         {
+            CheckContextAndJoinAnyAmbientTransaction();
             InternalSaveChanges();
             _unitOfWork = null;
         }
 
         void IUnitOfWorkParticipant.Rollback(IUnitOfWork unit)
         {
+            CheckContextAndJoinAnyAmbientTransaction();
             _unitOfWork = null;
+        }
+
+        private bool _isInTransaction;
+        private Transaction _ambientTransaction;
+
+        private void CheckContextAndJoinAnyAmbientTransaction()
+        {
+            UsageGuard.AssertNoContextChangeOccurred(this);
+            JoinAmbientTransactionIfRequired();
+        }
+
+        private void JoinAmbientTransactionIfRequired()
+        {
+            if(!_isInTransaction && Transaction.Current != null)
+            {
+                Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                _isInTransaction = true;
+                _ambientTransaction = Transaction.Current.Clone();
+            }
+        }
+
+        private bool IsPartOfUnitOfWorkOrTransaction{get { return _unitOfWork != null || _isInTransaction; }}
+        
+
+        void IEnlistmentNotification.Prepare(PreparingEnlistment preparingEnlistment)
+        {
+            try
+            {
+                using(var scope = new TransactionScope(_ambientTransaction))
+                {
+                    InternalSaveChanges();
+                    scope.Complete();
+                }
+                preparingEnlistment.Prepared();
+            }
+            catch(Exception exception)
+            {
+                Log.Error("DTC transaction prepare phase failed", exception);
+                preparingEnlistment.ForceRollback(exception);
+            }
+        }
+
+        void IEnlistmentNotification.Commit(Enlistment enlistment)
+        {
+            _isInTransaction = false;
+            enlistment.Done();
+        }
+
+        void IEnlistmentNotification.Rollback(Enlistment enlistment)
+        {
+            ((IUnitOfWorkParticipant)this).Rollback(_unitOfWork);
+            _isInTransaction = false;
+            enlistment.Done();
+        }
+
+        void IEnlistmentNotification.InDoubt(Enlistment enlistment)
+        {
+            _isInTransaction = false;
+            enlistment.Done();
         }
     }
 }
