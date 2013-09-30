@@ -1,0 +1,144 @@
+﻿using System;
+using System.Configuration;
+using Castle.Core;
+using Castle.MicroKernel.Lifestyle;
+using Castle.MicroKernel.Registration;
+using Castle.Windsor;
+using Castle.Windsor.Installer;
+using Composable.CQRS.EventSourcing;
+using Composable.CQRS.EventSourcing.SQLServer;
+using Composable.CQRS.Testing;
+using Composable.CQRS.ViewModels;
+using Composable.CQRS.Windsor;
+using Composable.DDD;
+using Composable.KeyValueStorage;
+using Composable.KeyValueStorage.SqlServer;
+using Composable.ServiceBus;
+using Composable.SystemExtensions.Threading;
+using JetBrains.Annotations;
+using NServiceBus;
+using NUnit.Framework;
+
+namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbortedBug
+{
+    [TestFixture]
+    public class ThisBugRecreationShouldNotCauseATransactionAbortedException
+    {
+        private WindsorContainer Container { get; set; }
+
+        [SetUp]
+        protected void Initialize()
+        {
+            Container = new WindsorContainer();
+            Container.Kernel.ComponentModelBuilder.AddContributor(new LifestyleRegistrationMutator(originalLifestyle: LifestyleType.PerWebRequest,
+                newLifestyleType: LifestyleType.Scoped));
+
+            Container.Install(FromAssembly.This());
+            Container.Register(Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>());
+
+
+            Container.Register(
+                Component.For<IWindsorContainer>().Instance(Container),
+                Component.For<IEventStore>().ImplementedBy<SqlServerEventStore>()
+                    .DependsOn(new Dependency[] {Dependency.OnValue(typeof(string), ConfigurationManager.ConnectionStrings["JobCommunicationDomain"].ConnectionString)})
+                    .LifestyleSingleton(),
+                Component.For<IEventStoreSession>().ImplementedBy<EventStoreSession>().LifeStyle.PerWebRequest,
+                Component.For<IServiceBus>().ImplementedBy<DummyServiceBus>());
+
+            Container.Register(
+                Component.For<IHandleMessages<CreateCandidateCommand>>().ImplementedBy<CreateCandidateCommandHandler>().LifestyleScoped(),
+                Component.For<IHandleMessages<CandidateCreatedEvent>>().ImplementedBy<CandidateViewModelUpdater>().LifestyleScoped()
+                );
+
+            Container.Register(
+                Component.For<IDocumentDb>()
+                    .ImplementedBy<SqlServerDocumentDb>()
+                    .DependsOn(new {connectionString = GetConnectionStringFromConfiguration("JobCommunicationReadModels")})
+                    .LifestylePerWebRequest(),
+                Component.For<IDocumentDbSessionInterceptor>()
+                    .Instance(NullOpDocumentDbSessionInterceptor.Instance)
+                    .LifestyleSingleton(),
+                Component.For<IDocumentDbSession>().ImplementedBy<DocumentDbSession>().LifestylePerWebRequest()
+                );
+        }
+
+        private static string GetConnectionStringFromConfiguration(string key)
+        {
+            var connectionString = ConfigurationManager.ConnectionStrings[key];
+            if(connectionString == null)
+            {
+                throw new ConfigurationErrorsException(string.Format("Missing connection string for '{0}'", key));
+            }
+            return connectionString.ConnectionString;
+        }
+
+#pragma warning disable 618
+        public class Candidate : AggregateRoot<Candidate>
+#pragma warning restore 618
+        {
+            public static Candidate Create(Guid id)
+            {
+                var result = new Candidate();
+                result.ApplyEvent(new CandidateCreatedEvent(id));
+                return result;
+            }
+
+            public void Apply(CandidateCreatedEvent evt)
+            {
+                SetIdBeVerySureYouKnowWhatYouAreDoing(evt.AggregateRootId);
+            }
+        }
+
+        [UsedImplicitly]
+        public class CreateCandidateCommandHandler : IHandleMessages<CreateCandidateCommand>
+        {
+            private readonly IEventStoreSession _session;
+
+            public CreateCandidateCommandHandler(IEventStoreSession session)
+            {
+                _session = session;
+            }
+
+            public void Handle(CreateCandidateCommand command)
+            {
+                var c = Candidate.Create(command.AggregateRootId);
+                _session.Save(c);
+                _session.SaveChanges();
+            }
+        }
+
+        [UsedImplicitly]
+        public class CandidateViewModelUpdater : ViewModelUpdater<CandidateViewModelUpdater, CandidateViewModel, CandidateCreatedEvent, IDocumentDbSession>
+        {
+            public CandidateViewModelUpdater(IDocumentDbSession session) : base(session, creationEvent: typeof(CandidateCreatedEvent))
+            {
+                RegisterHandlers()
+                    .For<CandidateCreatedEvent>(e => { Model = new CandidateViewModel(e.AggregateRootId); });
+            }
+        }
+
+        public class CandidateViewModel : PersistentEntity<CandidateViewModel>
+        {
+            public CandidateViewModel(Guid aggregateRootId): base(aggregateRootId) {}
+        }
+
+        public class CreateCandidateCommand : AggregateRootEvent
+        {
+            public CreateCandidateCommand(Guid candidateId) : base(candidateId) {}
+        }
+
+        public class CandidateCreatedEvent : AggregateRootEvent
+        {
+            public CandidateCreatedEvent(Guid jobCommunicationCandidateId) : base(jobCommunicationCandidateId) {}
+        }
+
+        [Test]
+        public void RunRecreationLogic()
+        {
+            using(Container.BeginScope())
+            {
+                Container.Resolve<IServiceBus>().Send(new CreateCandidateCommand(candidateId: Guid.Parse("00000000-0000-0000-0000-000000000001")));
+            }
+        }
+    }
+}
