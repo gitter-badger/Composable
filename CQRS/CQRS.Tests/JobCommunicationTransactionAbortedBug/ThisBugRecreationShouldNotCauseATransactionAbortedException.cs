@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Configuration;
-using Castle.Core;
 using Castle.MicroKernel.Lifestyle;
 using Castle.MicroKernel.Registration;
 using Castle.Windsor;
@@ -9,7 +8,6 @@ using Composable.CQRS.EventSourcing;
 using Composable.CQRS.EventSourcing.SQLServer;
 using Composable.CQRS.Testing;
 using Composable.CQRS.ViewModels;
-using Composable.CQRS.Windsor;
 using Composable.DDD;
 using Composable.KeyValueStorage;
 using Composable.KeyValueStorage.SqlServer;
@@ -20,7 +18,7 @@ using NUnit.Framework;
 
 // ReSharper disable RedundantArgumentDefaultValue
 // ReSharper disable MemberCanBePrivate.Global
-namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbortedBug
+namespace CQRS.Tests.JobCommunicationTransactionAbortedBug
 {
     [TestFixture]
     public class ThisBugRecreationShouldNotCauseATransactionAbortedException
@@ -31,9 +29,7 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
         protected void Initialize()
         {
             Container = new WindsorContainer();
-            Container.Kernel.ComponentModelBuilder.AddContributor(new LifestyleRegistrationMutator(originalLifestyle: LifestyleType.PerWebRequest, newLifestyleType: LifestyleType.Scoped));
             
-
             Container.Install(FromAssembly.This());
             Container.Register(Component.For<ISingleContextUseGuard>().ImplementedBy<SingleThreadUseGuard>());
 
@@ -41,9 +37,9 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
             Container.Register(
                 Component.For<IWindsorContainer>().Instance(Container),
                 Component.For<IEventStore>().ImplementedBy<SqlServerEventStore>()
-                    .DependsOn(new Dependency[] {Dependency.OnValue(typeof(string), ConfigurationManager.ConnectionStrings["JobCommunicationDomain"].ConnectionString)})
+                    .DependsOn(new Dependency[] {Dependency.OnValue(typeof(string), ConfigurationManager.ConnectionStrings["EventStore"].ConnectionString)})
                     .LifestyleSingleton(),
-                Component.For<IEventStoreSession>().ImplementedBy<EventStoreSession>().LifeStyle.PerWebRequest,
+                Component.For<IEventStoreSession>().ImplementedBy<EventStoreSession>().LifeStyle.Scoped(),
                 Component.For<IServiceBus>().ImplementedBy<DummyServiceBus>());
 
             Container.Register(
@@ -54,23 +50,13 @@ namespace Composable.CQRS.TransactionSupportTests.JobCommunicationTransactionAbo
             Container.Register(
                 Component.For<IDocumentDb>()
                     .ImplementedBy<SqlServerDocumentDb>()
-                    .DependsOn(new {connectionString = GetConnectionStringFromConfiguration("JobCommunicationReadModels")})
-                    .LifestylePerWebRequest(),
+                    .DependsOn(new { connectionString = ConfigurationManager.ConnectionStrings["KeyValueStore"].ConnectionString })
+                    .LifestyleScoped(),
                 Component.For<IDocumentDbSessionInterceptor>()
                     .Instance(NullOpDocumentDbSessionInterceptor.Instance)
                     .LifestyleSingleton(),
-                Component.For<IDocumentDbSession>().ImplementedBy<DocumentDbSession>().LifestylePerWebRequest()
+                Component.For<IDocumentDbSession>().ImplementedBy<DocumentDbSession>().LifestyleScoped()
                 );
-        }
-
-        private static string GetConnectionStringFromConfiguration(string key)
-        {
-            var connectionString = ConfigurationManager.ConnectionStrings[key];
-            if(connectionString == null)
-            {
-                throw new ConfigurationErrorsException(string.Format("Missing connection string for '{0}'", key));
-            }
-            return connectionString.ConnectionString;
         }
 
         public class Candidate : EventStoredAggregateRoot<Candidate>

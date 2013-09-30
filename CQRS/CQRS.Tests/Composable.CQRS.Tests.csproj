@@ -157,6 +157,7 @@
     <Compile Include="CQRS\SagaCommandHandlerBaseTests.cs" />
     <Compile Include="DebuggerShim.cs" />
     <Compile Include="DomainEvents\WhenEventIsRaised.cs" />
+    <Compile Include="JobCommunicationTransactionAbortedBug\ThisBugRecreationShouldNotCauseATransactionAbortedException.cs" />
     <Compile Include="KeyValueStorage\DocumentDBSession.DocumentKeyTests.cs" />
     <Compile Include="KeyValueStorage\Dog.cs" />
     <Compile Include="KeyValueStorage\InMemoryDocumentDbTests.cs" />
