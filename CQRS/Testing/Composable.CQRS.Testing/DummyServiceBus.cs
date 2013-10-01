@@ -63,9 +63,9 @@ namespace Composable.CQRS.Testing
 
                 foreach (var handler in _localHandlers.Where(t => t.Item1.IsAssignableFrom(typeof(TMessage))))
                     transformedMessages.AddRange(handler.Item2(message));
-            });
 
-            transformedMessages.ForEach(Publish);
+                transformedMessages.ForEach(Publish);
+            });            
         }
 
         public void SendLocal(object message)

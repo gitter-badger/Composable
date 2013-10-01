@@ -10,6 +10,7 @@ using Composable.ServiceBus;
 using Composable.StuffThatDoesNotBelongHere;
 using Composable.System;
 using Composable.System.Linq;
+using Composable.System.Transactions;
 using Composable.SystemExtensions.Threading;
 using Composable.UnitsOfWork;
 using log4net;
@@ -78,15 +79,20 @@ namespace Composable.CQRS.EventSourcing
 
         public void SaveChanges()
         {
-            _usageGuard.AssertNoContextChangeOccurred(this);
-            if(_unitOfWork == null)
-            {                
-                InternalSaveChanges();
-            }else
+            using(var scope = new TransactionScope())
             {
-                var newEvents = _idMap.SelectMany(p => p.Value.GetChanges()).ToList();
-                PublishUnpublishedEvents(newEvents);
-                Log.DebugFormat("{0} ignored call to SaveChanges since participating in a unit of work", _id);
+                _usageGuard.AssertNoContextChangeOccurred(this);
+                if(_unitOfWork == null)
+                {
+                    InternalSaveChanges();
+                }
+                else
+                {
+                    var newEvents = _idMap.SelectMany(p => p.Value.GetChanges()).ToList();
+                    PublishUnpublishedEvents(newEvents);
+                    Log.DebugFormat("{0} ignored call to SaveChanges since participating in a unit of work", _id);
+                }
+                scope.Complete();
             }
         }
 

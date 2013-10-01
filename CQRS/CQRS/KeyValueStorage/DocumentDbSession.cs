@@ -295,13 +295,13 @@ namespace Composable.KeyValueStorage
             if(!_isInTransaction && Transaction.Current != null)
             {
                 DebugLogWithUnitInformation("Joining Transaction {0}".FormatWith(Transaction.Current.LogText()));
-                Transaction.Current.EnlistDurable(_id, this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                //Transaction.Current.EnlistDurable(_id, this, EnlistmentOptions.EnlistDuringPrepareRequired);
                 //Transaction.Current.EnlistDurable(_id, this, EnlistmentOptions.None);
-                //Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
+                Transaction.Current.EnlistVolatile(this, EnlistmentOptions.EnlistDuringPrepareRequired);
                 //Transaction.Current.EnlistVolatile(this, EnlistmentOptions.None);
                 _isInTransaction = true;
                 //_ambientTransaction = Transaction.Current.Clone();
-                _ambientTransaction = Transaction.Current;
+                _ambientTransaction = Transaction.Current.Clone();
 
                 _ambientTransaction.TransactionCompleted += (sender, args) => DebugLogWithUnitInformation("ambient transaction completed: {0}".FormatWith(args.Transaction.LogText()));
                 Transaction.Current.TransactionCompleted += (sender, args) => DebugLogWithUnitInformation("source transaction completed: {0}".FormatWith(args.Transaction.LogText()));

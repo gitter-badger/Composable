@@ -1,53 +1,124 @@
 using System;
+using System.Runtime.Remoting.Messaging;
 using System.Transactions;
 
 namespace Composable.System.Transactions
 {
     public class DistributedTransactionScope : IDisposable
     {
-        private readonly TransactionScope _scope;
+        private static DistributedTransactionScopeImplBase CurrentScope
+        {
+            get
+            {
+                var result = (DistributedTransactionScopeImplBase)CallContext.GetData("DistributedTransactionScope_Current");
+                if (result != null && result.IsActive)
+                {
+                    return result;
+                }
+                return CurrentScope = null;
+            }
+            set { CallContext.SetData("DistributedTransactionScope_Current", value); }
+        }
+
+        private readonly DistributedTransactionScopeImplBase _impl;
 
         public DistributedTransactionScope()
         {
-            _scope = new TransactionScope();
-            var forceDistributed1 = new ForceDistributionParticipant();
-            Transaction.Current.EnlistDurable(forceDistributed1.Id, forceDistributed1, EnlistmentOptions.None);
+            if(CurrentScope != null)
+            {
+                _impl = CurrentScope = new InnerDistributedTransactionScopeImpl(CurrentScope);
+            }
+            else
+            {
+                _impl = CurrentScope = new DistributedTransactionScopeImpl();
+            }
         }
+
         public void Dispose()
         {
-            _scope.Dispose();
+            _impl.Dispose();
         }
 
         public void Complete()
         {
-            _scope.Complete();
+            _impl.Complete();
         }
 
-        private class ForceDistributionParticipant : IEnlistmentNotification
+        private abstract class DistributedTransactionScopeImplBase : IDisposable
         {
+            public abstract void Dispose();
+            public abstract void Complete();
+            public abstract bool IsActive { get; }
+        }
+
+        private class InnerDistributedTransactionScopeImpl : DistributedTransactionScopeImplBase
+        {
+            private readonly DistributedTransactionScopeImplBase _outer;
+
+            public InnerDistributedTransactionScopeImpl(DistributedTransactionScopeImplBase outer)
+            {
+                _outer = outer;
+            }
+
+            override public void Dispose() {}
+
+            override public void Complete() {}
+
+            override public bool IsActive { get { return _outer.IsActive; } }
+        }
+
+
+        private class DistributedTransactionScopeImpl : DistributedTransactionScopeImplBase, IEnlistmentNotification
+        {
+            private readonly TransactionScope _scope;
+
+            public DistributedTransactionScopeImpl()
+            {
+                _scope = new TransactionScope();
+                Id = Guid.NewGuid();
+                Transaction.Current.EnlistDurable(Id, this, EnlistmentOptions.None);
+            }
+
+            override public void Dispose()
+            {
+                _scope.Dispose();
+            }
+
+            override public void Complete()
+            {
+                _scope.Complete();
+            }
+
             public Guid Id { get; set; }
 
-            public ForceDistributionParticipant()
-            {
-                Id = Guid.NewGuid();
-            }
+            override public bool IsActive { get { return !CommitCalled && !RollBackCalled && !InDoubtCalled; } }
+
+            private bool PrepareCalled { get; set; }
+            private bool CommitCalled { get; set; }
+            private bool RollBackCalled { get; set; }
+            private bool InDoubtCalled { get; set; }
+
             public void Prepare(PreparingEnlistment preparingEnlistment)
             {
-                preparingEnlistment.Done();
+                PrepareCalled = true;
+                preparingEnlistment.Prepared();
             }
 
-            public void Commit(Enlistment enlistment)
+            void IEnlistmentNotification.Commit(Enlistment enlistment)
             {
+                CommitCalled = true;
                 enlistment.Done();
             }
 
-            public void Rollback(Enlistment enlistment)
+            void IEnlistmentNotification.Rollback(Enlistment enlistment)
             {
+                RollBackCalled = true;
                 enlistment.Done();
             }
 
-            public void InDoubt(Enlistment enlistment)
+            void IEnlistmentNotification.InDoubt(Enlistment enlistment)
             {
+                InDoubtCalled = true;
                 enlistment.Done();
             }
         }

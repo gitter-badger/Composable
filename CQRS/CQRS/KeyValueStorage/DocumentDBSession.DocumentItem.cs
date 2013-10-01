@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Transactions;
+using Composable.System;
 using Composable.System.Linq;
 using log4net;
 
@@ -88,22 +89,6 @@ namespace Composable.KeyValueStorage
                     }
                 }
             }            
-
-            //todo: (Rename?) and move to somewhere where it is usable for everyone. Not done now to avoid bumping everything that uses composable.core.
-            private class DisposeAction : IDisposable
-            {
-                private readonly Action _action;
-
-                public DisposeAction(Action action)
-                {
-                    _action = action;
-                }
-
-                public void Dispose()
-                {
-                    _action();
-                }
-            }
         }
 
     }
