@@ -1,5 +1,7 @@
 ﻿using System;
+using System.ComponentModel;
 using Composable.DDD;
+using Newtonsoft.Json;
 
 namespace Composable.CQRS.EventSourcing
 {
@@ -18,9 +20,16 @@ namespace Composable.CQRS.EventSourcing
             AggregateRootId = aggregateRootId;
         }
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore), DefaultValue(typeof(Guid), "00000000-0000-0000-0000-000000000000")]
         public Guid EventId { get; set; }
+        
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore), DefaultValue(0)]
         public int AggregateRootVersion { get; set; }
+        
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore), DefaultValue(typeof(Guid), "00000000-0000-0000-0000-000000000000")]
         public Guid AggregateRootId { get; set; }
+
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore), DefaultValue(typeof(DateTime), "0001-01-01 00:00:00")]
         public DateTime TimeStamp { get; set; }
     }
 }

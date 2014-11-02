@@ -16,9 +16,7 @@ using Composable.System.Linq;
 namespace Composable.CQRS.EventSourcing.SQLServer
 {
     public class SqlServerEventStore : IEventStore
-    {
-        
-
+    {       
         private static readonly ILog Log = LogManager.GetLogger(typeof(SqlServerEventStore));
 
         public static readonly JsonSerializerSettings JsonSettings = NewtonSoft.JsonSettings.JsonSerializerSettings;
@@ -179,13 +177,36 @@ namespace Composable.CQRS.EventSourcing.SQLServer
                         command.Parameters.Add(new SqlParameter("EventType", @event.GetType().FullName));
                         command.Parameters.Add(new SqlParameter("EventId", @event.EventId));
                         command.Parameters.Add(new SqlParameter("TimeStamp", @event.TimeStamp));
-
-                        command.Parameters.Add(new SqlParameter("Event", JsonConvert.SerializeObject(@event, Formatting.Indented, JsonSettings)));
+                       
+                        command.Parameters.Add(new SqlParameter("Event", SerializeEvent(@event)));
 
                         command.ExecuteNonQuery();
                     }
                 }
             }
+        }
+
+        private static string SerializeEvent(IAggregateRootEvent @event)
+        {
+            var tmpAggregateId = @event.AggregateRootId;
+            var tmpVersion = @event.AggregateRootVersion;
+            var tmpId = @event.EventId;
+            var tmpTimeStamp = @event.TimeStamp;
+
+            //Setting the values to the default values for these types means that the serializer will ignore them and we get smaller events in the data store.
+            @event.AggregateRootId = default(Guid);
+            @event.AggregateRootVersion = default(int);
+            @event.EventId = default(Guid);
+            @event.TimeStamp = default(DateTime);
+
+            var result = JsonConvert.SerializeObject(@event, Formatting.Indented, JsonSettings);
+
+            @event.AggregateRootId = tmpAggregateId;
+            @event.AggregateRootVersion = tmpVersion;
+            @event.EventId = tmpId;
+            @event.TimeStamp = tmpTimeStamp;
+
+            return result;
         }
 
         public void DeleteEvents(Guid aggregateId)
@@ -228,7 +249,7 @@ namespace Composable.CQRS.EventSourcing.SQLServer
 
         private static readonly HashSet<string> VerifiedTables = new HashSet<string>();        
 
-        //todo:Move this and its cousins below into another abstraction, delegate to that abstraction, and obsolete these methods.
+        //todo:Move this and its cousins below into another abstraction, delegate to that abstraction, and obsolete these methods. Alternatively remove this alltogether and rely on migrations or similar to set up the databases.
         private void EnsureEventsTableExists()
         {
             lock (VerifiedTables)
