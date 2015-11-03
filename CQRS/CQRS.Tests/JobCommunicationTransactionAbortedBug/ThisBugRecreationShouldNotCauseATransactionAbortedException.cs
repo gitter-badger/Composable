@@ -201,7 +201,7 @@ namespace CQRS.Tests.JobCommunicationTransactionAbortedBug
         public void TestIfItsAllAboutForcingDistributionEarly2()
         {
             Console.WriteLine(Transaction.Current);
-            using (var transaction = new DistributedTransactionScope())
+            using (var transaction = new TransactionScope())
             {
                 Console.WriteLine(Transaction.Current.TransactionInformation.DistributedIdentifier);
                 using (Container.BeginScope())
