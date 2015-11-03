@@ -37,7 +37,7 @@ namespace CQRS.Tests.CQRS.EventSourcing
         }
     }
 
-    public interface IAccountRegisteredEvent : IAggregateRootEvent
+    public interface IAccountRegisteredEvent : IAggregateRootCreatedEvent
     {
         string Email { get; }
     }
@@ -72,6 +72,7 @@ namespace CQRS.Tests.CQRS.EventSourcing
     {
         public Administrator()
         {
+            SetIdBeVerySureYouKnowWhatYouAreDoing(Guid.NewGuid());
             Register(Handler.For<AdministratorRegisteredEvent>().OnApply(ApplyAs<IAccountRegisteredEvent>));
         }
 

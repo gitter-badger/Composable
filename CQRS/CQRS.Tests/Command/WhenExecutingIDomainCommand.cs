@@ -12,9 +12,6 @@ using Composable.System.Linq;
 using Composable.SystemExtensions.Threading;
 using Microsoft.Practices.ServiceLocation;
 using NUnit.Framework;
-using StructureMap;
-using StructureMap.Configuration.DSL;
-using StructureMap.ServiceLocatorAdapter;
 
 #endregion
 
