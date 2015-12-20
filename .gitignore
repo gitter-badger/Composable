@@ -28,3 +28,4 @@ Samples/AccountManagement/_NCrunch_Sample.AccountManagement
 .paket/paket.exe
 Samples/AccountManagement/.paket/paket.exe
 .vs/
+NuGetFeed/
