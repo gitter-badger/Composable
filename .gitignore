@@ -29,3 +29,4 @@ Samples/AccountManagement/_NCrunch_Sample.AccountManagement
 Samples/AccountManagement/.paket/paket.exe
 .vs/
 NuGetFeed/
+!NuGetFeed/.keepfolder
